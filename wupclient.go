@@ -10,10 +10,6 @@ import (
 	"strings"
 )
 
-func buffer(size int) []byte {
-	return make([]byte, size)
-}
-
 func copyString(buffer []byte, s string, offset int) {
 	copy(buffer[offset:], []byte(s+"\x00"))
 }
@@ -300,7 +296,7 @@ func (c *wupclient) Ioctlv(handle, cmd uint32, inbufs [][]byte, outbufSizes []ui
 		inbufsWithSizes = append(inbufsWithSizes, []byte(b))
 	}
 	for _, b := range outbufSizes {
-		inbufsWithSizes = append(inbufsWithSizes, buffer(int(b)))
+		inbufsWithSizes = append(inbufsWithSizes, make([]byte, int(b)))
 	}
 
 	inbufsPointers := make([][]byte, len(inbufsPtr)+len(outbufsPtr))
@@ -335,11 +331,11 @@ func (c *wupclient) Ioctlv(handle, cmd uint32, inbufs [][]byte, outbufSizes []ui
 }
 
 func (c *wupclient) FSA_Mount(handle interface{}, devicePath, volumePath string, flags uint32) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, devicePath, 0x0004)
 	copyString(inbuffer, volumePath, 0x0284)
 	copyWord(inbuffer, flags, 0x0504)
-	_, _, err := c.Ioctlv(handle.(uint32), 0x01, [][]byte{inbuffer, buffer(0)}, []uint32{0x293}, nil, nil)
+	_, _, err := c.Ioctlv(handle.(uint32), 0x01, [][]byte{inbuffer, make([]byte, 0)}, []uint32{0x293}, nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -347,7 +343,7 @@ func (c *wupclient) FSA_Mount(handle interface{}, devicePath, volumePath string,
 }
 
 func (c *wupclient) FSA_Unmount(handle interface{}, path string, flags uint32) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x4)
 	copyWord(inbuffer, flags, 0x284)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x02, inbuffer, 0x293)
@@ -358,7 +354,7 @@ func (c *wupclient) FSA_Unmount(handle interface{}, path string, flags uint32) (
 }
 
 func (c *wupclient) FSA_RawOpen(handle interface{}, device string) (uint32, uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, device, 0x4)
 	ret, data, err := c.Ioctl(handle.(uint32), 0x6A, inbuffer, 0x293)
 	if err != nil {
@@ -368,7 +364,7 @@ func (c *wupclient) FSA_RawOpen(handle interface{}, device string) (uint32, uint
 }
 
 func (c *wupclient) FSA_OpenDir(handle interface{}, path string) (uint32, uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x4)
 	ret, data, err := c.Ioctl(handle.(uint32), 0x0A, inbuffer, 0x293)
 	if err != nil {
@@ -398,7 +394,7 @@ func (c *wupclient) FSA_ReadDir(handle, dirHandle uint32) (uint32, interface{}, 
 }
 
 func (c *wupclient) FSA_CloseDir(handle interface{}, dirHandle uint32) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, dirHandle, 0x4)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x0D, inbuffer, 0x293)
 	if err != nil {
@@ -408,7 +404,7 @@ func (c *wupclient) FSA_CloseDir(handle interface{}, dirHandle uint32) (uint32, 
 }
 
 func (c *wupclient) FSA_OpenFile(handle interface{}, path, mode string) (uint32, uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x4)
 	copyString(inbuffer, mode, 0x284)
 	ret, data, err := c.Ioctl(handle.(uint32), 0x0E, inbuffer, 0x293)
@@ -419,7 +415,7 @@ func (c *wupclient) FSA_OpenFile(handle interface{}, path, mode string) (uint32,
 }
 
 func (c *wupclient) FSA_MakeDir(handle interface{}, path string, flags uint32) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x4)
 	copyWord(inbuffer, flags, 0x284)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x07, inbuffer, 0x293)
@@ -430,7 +426,7 @@ func (c *wupclient) FSA_MakeDir(handle interface{}, path string, flags uint32) (
 }
 
 func (c *wupclient) FSA_ReadFile(handle interface{}, fileHandle, size, cnt uint32) (uint32, []byte, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, size, 0x08)
 	copyWord(inbuffer, cnt, 0x0C)
 	copyWord(inbuffer, fileHandle, 0x14)
@@ -442,7 +438,7 @@ func (c *wupclient) FSA_ReadFile(handle interface{}, fileHandle, size, cnt uint3
 }
 
 func (c *wupclient) FSA_WriteFile(handle interface{}, fileHandle uint32, data []byte) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, 1, 0x08)                 // size
 	copyWord(inbuffer, uint32(len(data)), 0x0C) // cnt
 	copyWord(inbuffer, fileHandle, 0x14)
@@ -454,7 +450,7 @@ func (c *wupclient) FSA_WriteFile(handle interface{}, fileHandle uint32, data []
 }
 
 func (c *wupclient) FSA_ReadFilePtr(handle interface{}, fileHandle, size, cnt uint32, ptr []byte) (uint32, []byte, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, size, 0x08)
 	copyWord(inbuffer, cnt, 0x0C)
 	copyWord(inbuffer, fileHandle, 0x14)
@@ -468,7 +464,7 @@ func (c *wupclient) FSA_ReadFilePtr(handle interface{}, fileHandle, size, cnt ui
 }
 
 func (c *wupclient) FSA_WriteFilePtr(handle interface{}, fileHandle, size, cnt uint32, ptr []byte) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, size, 0x08)
 	copyWord(inbuffer, cnt, 0x0C)
 	copyWord(inbuffer, fileHandle, 0x14)
@@ -482,7 +478,7 @@ func (c *wupclient) FSA_WriteFilePtr(handle interface{}, fileHandle, size, cnt u
 }
 
 func (c *wupclient) FSA_GetStatFile(handle interface{}, fileHandle uint32) (uint32, []uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, fileHandle, 0x4)
 	ret, data, err := c.Ioctl(handle.(uint32), 0x14, inbuffer, 0x64)
 	if err != nil {
@@ -496,7 +492,7 @@ func (c *wupclient) FSA_GetStatFile(handle interface{}, fileHandle uint32) (uint
 }
 
 func (c *wupclient) FSA_CloseFile(handle interface{}, fileHandle uint32) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyWord(inbuffer, fileHandle, 0x4)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x15, inbuffer, 0x293)
 	if err != nil {
@@ -507,7 +503,7 @@ func (c *wupclient) FSA_CloseFile(handle interface{}, fileHandle uint32) (uint32
 
 func (c *wupclient) FSA_ChangeMode(handle interface{}, path string, mode uint32) (uint32, error) {
 	mask := uint32(0x777)
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x0004)
 	copyWord(inbuffer, mode, 0x0284)
 	copyWord(inbuffer, mask, 0x0288)
@@ -519,7 +515,7 @@ func (c *wupclient) FSA_ChangeMode(handle interface{}, path string, mode uint32)
 }
 
 func (c *wupclient) FSA_Remove(handle interface{}, path string) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x04)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x08, inbuffer, 0x293)
 	if err != nil {
@@ -529,7 +525,7 @@ func (c *wupclient) FSA_Remove(handle interface{}, path string) (uint32, error) 
 }
 
 func (c *wupclient) FSA_FlushVolume(handle interface{}, path string) (uint32, error) {
-	inbuffer := buffer(0x520)
+	inbuffer := make([]byte, 0x520)
 	copyString(inbuffer, path, 0x04)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x1B, inbuffer, 0x293)
 	if err != nil {
@@ -539,7 +535,7 @@ func (c *wupclient) FSA_FlushVolume(handle interface{}, path string) (uint32, er
 }
 
 func (c *wupclient) MCP_InstallGetInfo(handle interface{}, path string) (uint32, []uint32, error) {
-	inbuffer := buffer(0x27F)
+	inbuffer := make([]byte, 0x27F)
 	copyString(inbuffer, path, 0x0)
 	ret, data, err := c.Ioctlv(handle.(uint32), 0x80, [][]byte{inbuffer}, []uint32{0x16}, nil, nil)
 	if err != nil {
@@ -553,7 +549,7 @@ func (c *wupclient) MCP_InstallGetInfo(handle interface{}, path string) (uint32,
 }
 
 func (c *wupclient) MCP_Install(handle interface{}, path string) (uint32, error) {
-	inbuffer := buffer(0x27F)
+	inbuffer := make([]byte, 0x27F)
 	copyString(inbuffer, path, 0x0)
 	ret, _, err := c.Ioctlv(handle.(uint32), 0x81, [][]byte{inbuffer}, nil, nil, nil)
 	if err != nil {
@@ -575,9 +571,9 @@ func (c *wupclient) MCP_InstallGetProgress(handle interface{}) (uint32, []uint32
 }
 
 func (c *wupclient) MCP_DeleteTitle(handle interface{}, path string, flush uint32) (uint32, error) {
-	inbuffer := buffer(0x38)
+	inbuffer := make([]byte, 0x38)
 	copyString(inbuffer, path, 0x0)
-	inbuffer2 := buffer(0x4)
+	inbuffer2 := make([]byte, 0x4)
 	copyWord(inbuffer2, flush, 0x0)
 	ret, _, err := c.Ioctlv(handle.(uint32), 0x83, [][]byte{inbuffer, inbuffer2}, nil, nil, nil)
 	if err != nil {
@@ -587,11 +583,11 @@ func (c *wupclient) MCP_DeleteTitle(handle interface{}, path string, flush uint3
 }
 
 func (c *wupclient) MCP_CopyTitle(handle interface{}, path string, dstDeviceID, flush uint32) (uint32, error) {
-	inbuffer := buffer(0x27F)
+	inbuffer := make([]byte, 0x27F)
 	copyString(inbuffer, path, 0x0)
-	inbuffer2 := buffer(0x4)
+	inbuffer2 := make([]byte, 0x4)
 	copyWord(inbuffer2, dstDeviceID, 0x0)
-	inbuffer3 := buffer(0x4)
+	inbuffer3 := make([]byte, 0x4)
 	copyWord(inbuffer3, flush, 0x0)
 	ret, _, err := c.Ioctlv(handle.(uint32), 0x85, [][]byte{inbuffer, inbuffer2, inbuffer3}, nil, nil, nil)
 	if err != nil {
@@ -601,7 +597,7 @@ func (c *wupclient) MCP_CopyTitle(handle interface{}, path string, dstDeviceID, 
 }
 
 func (c *wupclient) MCP_InstallSetTargetDevice(handle interface{}, device uint32) (uint32, error) {
-	inbuffer := buffer(0x4)
+	inbuffer := make([]byte, 0x4)
 	copyWord(inbuffer, device, 0x0)
 	ret, _, err := c.Ioctl(handle.(uint32), 0x8D, inbuffer, 0)
 	if err != nil {
@@ -611,7 +607,7 @@ func (c *wupclient) MCP_InstallSetTargetDevice(handle interface{}, device uint32
 }
 
 func (c *wupclient) MCP_InstallSetTargetUsb(handle interface{}, device uint32) (uint32, error) {
-	inbuffer := buffer(0x4)
+	inbuffer := make([]byte, 0x4)
 	copyWord(inbuffer, device, 0x0)
 	ret, _, err := c.Ioctl(handle.(uint32), 0xF1, inbuffer, 0)
 	if err != nil {
