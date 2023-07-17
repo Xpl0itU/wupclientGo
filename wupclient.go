@@ -22,6 +22,10 @@ func copyWord(buffer []byte, w uint32, offset int) {
 	binary.BigEndian.PutUint32(buffer[offset:], w)
 }
 
+func copyU64(buffer []byte, w uint64, offset int) {
+	binary.BigEndian.PutUint64(buffer[offset:(offset+8)], w)
+}
+
 func getString(buffer []byte, offset int) string {
 	end := offset
 	for buffer[end] != 0 {
@@ -1198,10 +1202,6 @@ func (c *wupclient) Mv(srcPath string, dstPath string) {
 	} else {
 		fmt.Println("mv aborted")
 	}
-}
-
-func copyU64(buffer []byte, w uint64, offset int) {
-	binary.BigEndian.PutUint64(buffer[offset:(offset+8)], w)
 }
 
 func (c *wupclient) FSA_MakeQuota(handle uint32, path string, mode uint32, size uint64) uint32 {
