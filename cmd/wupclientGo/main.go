@@ -10,9 +10,5 @@ func main() {
 	}
 	defer client.CloseConnection()
 
-	// Get syslog
-	client.DumpSyslog()
-
-	// Send shutdown signal
-	client.Svc(0x72, []uint32{0})
+	client.Ls("/vol/storage_mlc01", false)
 }

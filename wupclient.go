@@ -373,23 +373,24 @@ func (c *wupclient) FSA_OpenDir(handle interface{}, path string) (uint32, uint32
 	return ret, binary.BigEndian.Uint32(data[4:8]), nil
 }
 
-func (c *wupclient) FSA_ReadDir(handle interface{}, dirHandle uint32) (uint32, interface{}, error) {
-	inbuffer := buffer(0x520)
-	copyWord(inbuffer, dirHandle, 0x4)
-	ret, data, err := c.Ioctl(handle.(uint32), 0x0B, inbuffer, 0x293)
+func (c *wupclient) FSA_ReadDir(handle, dirHandle uint32) (uint32, interface{}, error) {
+	inbuffer := make([]byte, 0x520)
+	binary.BigEndian.PutUint32(inbuffer[0x4:0x8], dirHandle)
+	ret, data, _ := c.Ioctl(handle, 0x0B, inbuffer, 0x293)
 	data = data[4:]
-	if err != nil {
-		return 0, nil, err
-	}
+	unk := data[:0x64]
 	if ret == 0 {
+		name := getString(data, 0x64)
+		isFile := (unk[0] & 128) != 128
 		result := map[string]interface{}{
-			"name":    getString(data, 0x64),
-			"is_file": (data[0x64] & 128) != 128,
-			"unk":     data[:0x64],
+			"name":    name,
+			"is_file": isFile,
+			"unk":     unk,
 		}
 		return ret, result, nil
+	} else {
+		return ret, nil, fmt.Errorf("error reading dir: %d", ret)
 	}
-	return ret, nil, nil
 }
 
 func (c *wupclient) FSA_CloseDir(handle interface{}, dirHandle uint32) (uint32, error) {
@@ -634,7 +635,7 @@ func (c *wupclient) DumpSyslog() {
 }
 
 func (c *wupclient) GetFSAHandle() uint32 {
-	if c.fsaHandle == 0 {
+	if c.fsaHandle == nil {
 		c.fsaHandle, _ = c.Open("/dev/fsa", 0)
 		if c.fsaHandle == 0 {
 			fmt.Println("Failed to open fsa")
@@ -695,45 +696,50 @@ func (c *wupclient) Cd(path string) int32 {
 	}
 }
 
-func (c *wupclient) Ls(path string, returnData bool) interface{} {
+func (c *wupclient) Ls(path string, returnData bool) []interface{} {
 	fsaHandle := c.GetFSAHandle()
 	if path != "" && path[0] != '/' {
 		path = c.cwd + "/" + path
 	}
 	ret, dirHandle, err := c.FSA_OpenDir(fsaHandle, path)
 	if err != nil {
-		fmt.Printf("ls error : %X\n", ret)
+		fmt.Printf("ls error : %08X\n", ret)
 		return nil
 	}
 	if ret != 0 {
-		fmt.Printf("opendir error : %X\n", ret)
-		if returnData {
-			return nil
-		}
-		return []byte{}
+		fmt.Printf("opendir error: %08X\n", ret)
+		return nil
 	}
-	entries := make([]interface{}, 0)
+	entries := []interface{}{}
 	for {
 		ret, data, err := c.FSA_ReadDir(fsaHandle, dirHandle)
 		if err != nil {
-			fmt.Printf("readdir error : %X\n", ret)
-			break
+			fmt.Printf("readdir error: %08X\n", ret)
+			return nil
 		}
 		if ret != 0 {
 			break
 		}
 		if !returnData {
-			dataMap := data.(map[string]interface{})
-			if dataMap["is_file"].(bool) {
-				fmt.Printf("     %s\n", dataMap["name"].(string))
-			} else {
-				fmt.Printf("     %s/\n", dataMap["name"].(string))
+			if isFile, ok := data.(map[string]interface{})["is_file"].(bool); ok {
+				if data.(map[string]interface{})["name"].(string) == "" {
+					break
+				}
+				if isFile {
+					fmt.Printf("[file]     %s\n", data.(map[string]interface{})["name"].(string))
+				} else {
+					fmt.Printf("[dir]     %s/\n", data.(map[string]interface{})["name"].(string))
+				}
 			}
 		} else {
 			entries = append(entries, data)
 		}
 	}
-	c.FSA_CloseDir(fsaHandle, dirHandle)
+	ret, err = c.FSA_CloseDir(fsaHandle, dirHandle)
+	if err != nil {
+		fmt.Printf("closedir error: %08X\n", ret)
+		return nil
+	}
 	if returnData {
 		return entries
 	}
@@ -744,7 +750,7 @@ func (c *wupclient) DlDir(path string) {
 	if path[0] != '/' {
 		path = c.cwd + "/" + path
 	}
-	entries := c.Ls(path, true).([]interface{})
+	entries := c.Ls(path, true)
 	for _, e := range entries {
 		entry := e.(map[string]interface{})
 		if entry["is_file"].(bool) {
@@ -758,7 +764,7 @@ func (c *wupclient) DlDir(path string) {
 }
 
 func (c *wupclient) CpDir(srcpath, dstpath string) {
-	entries := c.Ls(srcpath, true).([]interface{})
+	entries := c.Ls(srcpath, true)
 	q := make([][3]interface{}, 0)
 	for _, e := range entries {
 		entry := e.(map[string]interface{})
@@ -774,7 +780,7 @@ func (c *wupclient) CpDir(srcpath, dstpath string) {
 			c.Cp(_srcpath, _dstpath)
 		} else {
 			c.Mkdir(_dstpath, 0x600)
-			subEntries := c.Ls(_srcpath, true).([]interface{})
+			subEntries := c.Ls(_srcpath, true)
 			for _, subEntry := range subEntries {
 				q = append(q, [3]interface{}{_srcpath, _dstpath, subEntry})
 			}
@@ -1099,7 +1105,7 @@ func (c *wupclient) RmDir(path string) {
 	}
 	c.FSA_CloseDir(fsaHandle, dirHandle)
 	entries := c.Ls(path, true)
-	if len(entries.([]interface{})) != 0 {
+	if len(entries) != 0 {
 		fmt.Println("rmdir error: directory not empty!")
 		return
 	}
