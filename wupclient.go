@@ -731,6 +731,9 @@ func (c *wupclient) Ls(path string, returnData bool) []interface{} {
 				}
 			}
 		} else {
+			if data.(map[string]interface{})["name"].(string) == "" {
+				break
+			}
 			entries = append(entries, data)
 		}
 	}
