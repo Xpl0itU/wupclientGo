@@ -1,7 +1,6 @@
 package wupclientgo
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -1041,16 +1040,16 @@ func (c *wupclient) Stat(filename string) {
 	c.FSA_CloseFile(fsaHandle, fileHandle)
 }
 
-func (c *wupclient) askyesno() bool {
+func (c *wupclient) askYesNo() bool {
 	yes := map[string]bool{"yes": true, "ye": true, "y": true}
 	no := map[string]bool{"no": true, "n": true, "": true}
+	var inputKey string
 	for {
-		reader := bufio.NewReader(os.Stdin)
-		choice, _ := reader.ReadString('\n')
-		choice = strings.ToLower(strings.TrimSpace(choice))
-		if yes[choice] {
+		fmt.Scanln(&inputKey)
+		inputKey = strings.ToLower(strings.TrimSpace(inputKey))
+		if yes[inputKey] {
 			return true
-		} else if no[choice] {
+		} else if no[inputKey] {
 			return false
 		} else {
 			fmt.Println("Please respond with 'y' or 'n'")
@@ -1074,7 +1073,7 @@ func (c *wupclient) Rm(filename string) {
 	}
 	c.FSA_CloseFile(fsaHandle, fileHandle)
 	fmt.Println("WARNING: REMOVING A FILE CAN BRICK YOUR CONSOLE, ARE YOU SURE (Y/N)?")
-	if c.askyesno() {
+	if c.askYesNo() {
 		ret, err = c.FSA_Remove(fsaHandle, filename)
 		if err != nil {
 			fmt.Printf("rm error: %X\n", ret)
@@ -1107,7 +1106,7 @@ func (c *wupclient) RmDir(path string) {
 		return
 	}
 	fmt.Println("WARNING: REMOVING A DIRECTORY CAN BRICK YOUR CONSOLE, ARE YOU SURE (Y/N)?")
-	if c.askyesno() {
+	if c.askYesNo() {
 		ret, err = c.FSA_Remove(fsaHandle, path)
 		if err != nil {
 			fmt.Printf("rmdir error: %X\n", ret)
@@ -1188,7 +1187,7 @@ func (c *wupclient) Mv(srcPath string, dstPath string) {
 		dstPath = c.cwd + "/" + dstPath
 	}
 	fmt.Println("WARNING: MOVING A FILE OR FOLDER CAN BRICK YOUR CONSOLE, ARE YOU SURE (Y/N)?")
-	if c.askyesno() {
+	if c.askYesNo() {
 		ret := c.FSA_Rename(fsaHandle, srcPath, dstPath)
 		if ret == 0 {
 			fmt.Printf("moved %s to %s\n", srcPath, dstPath)
