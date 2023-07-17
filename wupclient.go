@@ -229,8 +229,8 @@ func (c *wupclient) Open(device string, mode uint32) (uint32, error) {
 	return handle, nil
 }
 
-func (c *wupclient) Close(handle uint32) (uint32, error) {
-	ret, err := c.Svc(0x34, []uint32{handle})
+func (c *wupclient) Close(handle interface{}) (uint32, error) {
+	ret, err := c.Svc(0x34, []uint32{handle.(uint32)})
 	if err != nil {
 		return 0, err
 	}
@@ -372,7 +372,7 @@ func (c *wupclient) FSA_OpenDir(handle interface{}, path string) (uint32, uint32
 	return ret, binary.BigEndian.Uint32(data[4:8]), nil
 }
 
-func (c *wupclient) FSA_ReadDir(handle, dirHandle uint32) (uint32, interface{}, error) {
+func (c *wupclient) FSA_ReadDir(handle, dirHandle uint32) (uint32, FSADirectoryEntry, error) {
 	inbuffer := make([]byte, 0x520)
 	binary.BigEndian.PutUint32(inbuffer[0x4:0x8], dirHandle)
 	ret, data, _ := c.Ioctl(handle, 0x0B, inbuffer, 0x293)
@@ -381,14 +381,14 @@ func (c *wupclient) FSA_ReadDir(handle, dirHandle uint32) (uint32, interface{}, 
 	if ret == 0 {
 		name := getString(data, 0x64)
 		isFile := (unk[0] & 128) != 128
-		result := map[string]interface{}{
-			"name":    name,
-			"is_file": isFile,
-			"unk":     unk,
+		result := FSADirectoryEntry{
+			Name:   name,
+			IsFile: isFile,
+			Unk:    unk,
 		}
 		return ret, result, nil
 	} else {
-		return ret, nil, fmt.Errorf("error reading dir: %d", ret)
+		return ret, FSADirectoryEntry{}, fmt.Errorf("error reading dir: %d", ret)
 	}
 }
 
@@ -531,6 +531,42 @@ func (c *wupclient) FSA_FlushVolume(handle interface{}, path string) (uint32, er
 		return 0, err
 	}
 	return ret, nil
+}
+
+func (c *wupclient) FSA_MakeQuota(handle interface{}, path string, mode uint32, size uint64) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, path, 0x4)
+	copyWord(inbuffer, mode, 0x284)
+	copyU64(inbuffer, size, 0x288)
+	ret, _, err := c.Ioctl(handle.(uint32), 0x1D, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_MakeQuota error: %X\n", ret)
+		return 1
+	}
+	return ret
+}
+
+func (c *wupclient) FSA_RemoveQuota(handle interface{}, path string) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, path, 0x4)
+	ret, _, err := c.Ioctl(handle.(uint32), 0x72, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_RemoveQuota error: %X\n", ret)
+		return 1
+	}
+	return ret
+}
+
+func (c *wupclient) FSA_Rename(handle interface{}, oldPath string, newPath string) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, oldPath, 0x4)
+	copyString(inbuffer, newPath, 0x284)
+	ret, _, err := c.Ioctl(handle.(uint32), 0x09, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_Rename error: %X\n", ret)
+		return 1
+	}
+	return ret
 }
 
 func (c *wupclient) MCP_InstallGetInfo(handle interface{}, path string) (uint32, []uint32, error) {
@@ -695,7 +731,7 @@ func (c *wupclient) Cd(path string) int32 {
 	}
 }
 
-func (c *wupclient) Ls(path string, returnData bool) []interface{} {
+func (c *wupclient) Ls(path string, returnData bool) []FSADirectoryEntry {
 	fsaHandle := c.GetFSAHandle()
 	if path != "" && path[0] != '/' {
 		path = c.cwd + "/" + path
@@ -709,7 +745,7 @@ func (c *wupclient) Ls(path string, returnData bool) []interface{} {
 		fmt.Printf("opendir error: %08X\n", ret)
 		return nil
 	}
-	entries := []interface{}{}
+	entries := []FSADirectoryEntry{}
 	for {
 		ret, data, err := c.FSA_ReadDir(fsaHandle, dirHandle)
 		if err != nil {
@@ -720,18 +756,16 @@ func (c *wupclient) Ls(path string, returnData bool) []interface{} {
 			break
 		}
 		if !returnData {
-			if isFile, ok := data.(map[string]interface{})["is_file"].(bool); ok {
-				if data.(map[string]interface{})["name"].(string) == "" {
-					break
-				}
-				if isFile {
-					fmt.Printf("[file]     %s\n", data.(map[string]interface{})["name"].(string))
-				} else {
-					fmt.Printf("[dir]     %s/\n", data.(map[string]interface{})["name"].(string))
-				}
+			if data.Name == "" {
+				break
+			}
+			if data.IsFile {
+				fmt.Printf("[file]     %s\n", data.Name)
+			} else {
+				fmt.Printf("[dir]     %s/\n", data.Name)
 			}
 		} else {
-			if data.(map[string]interface{})["name"].(string) == "" {
+			if data.Name == "" {
 				break
 			}
 			entries = append(entries, data)
@@ -754,13 +788,13 @@ func (c *wupclient) DlDir(path string) {
 	}
 	entries := c.Ls(path, true)
 	for _, e := range entries {
-		entry := e.(map[string]interface{})
-		if entry["is_file"].(bool) {
-			fmt.Println(entry["name"].(string))
-			c.Dl(path+"/"+entry["name"].(string), path[1:], "")
+		entry := e
+		if entry.IsFile {
+			fmt.Println(entry.Name)
+			c.Dl(path+"/"+entry.Name, path[1:], "")
 		} else {
-			fmt.Println(entry["name"].(string) + "/")
-			c.DlDir(path + "/" + entry["name"].(string))
+			fmt.Println(entry.Name + "/")
+			c.DlDir(path + "/" + entry.Name)
 		}
 	}
 }
@@ -768,17 +802,16 @@ func (c *wupclient) DlDir(path string) {
 func (c *wupclient) CpDir(srcpath, dstpath string) {
 	entries := c.Ls(srcpath, true)
 	q := make([][3]interface{}, 0)
-	for _, e := range entries {
-		entry := e.(map[string]interface{})
+	for _, entry := range entries {
 		q = append(q, [3]interface{}{srcpath, dstpath, entry})
 	}
 	for len(q) > 0 {
 		entry := q[len(q)-1]
 		q = q[:len(q)-1]
-		_srcpath := entry[0].(string) + "/" + entry[2].(map[string]interface{})["name"].(string)
-		_dstpath := entry[1].(string) + "/" + entry[2].(map[string]interface{})["name"].(string)
-		if entry[2].(map[string]interface{})["is_file"].(bool) {
-			fmt.Println(entry[2].(map[string]interface{})["name"].(string))
+		_srcpath := entry[0].(string) + "/" + entry[2].(FSADirectoryEntry).Name
+		_dstpath := entry[1].(string) + "/" + entry[2].(FSADirectoryEntry).Name
+		if entry[2].(FSADirectoryEntry).IsFile {
+			fmt.Println(entry[2].(FSADirectoryEntry).Name)
 			c.Cp(_srcpath, _dstpath)
 		} else {
 			c.Mkdir(_dstpath, 0x600)
@@ -1012,7 +1045,7 @@ func (c *wupclient) Fw(filename string, offset uint32, buffer []byte) {
 	c.FSA_CloseFile(fsaHandle, fileHandle)
 }
 
-func (c *wupclient) Stat(filename string) {
+func (c *wupclient) Stat(filename string) FSAStat {
 	fsaHandle := c.GetFSAHandle()
 	if filename[0] != '/' {
 		filename = c.cwd + "/" + filename
@@ -1020,27 +1053,29 @@ func (c *wupclient) Stat(filename string) {
 	ret, fileHandle, err := c.FSA_OpenFile(fsaHandle, filename, "r")
 	if err != nil {
 		fmt.Printf("stat error: could not open %s\n", filename)
-		return
+		return FSAStat{}
 	}
 	if ret != 0 {
 		fmt.Printf("stat error: could not open %s\n", filename)
-		return
+		return FSAStat{}
 	}
 	ret, stats, err := c.FSA_GetStatFile(fsaHandle, fileHandle)
 	if err != nil {
 		fmt.Printf("stat error: %X\n", ret)
-		return
+		return FSAStat{}
 	}
+	var stat FSAStat
 	if ret != 0 {
 		fmt.Printf("stat error: %X\n", ret)
 	} else {
-		fmt.Printf("flags: %X\n", stats[1])
-		fmt.Printf("mode: %X\n", stats[2])
-		fmt.Printf("owner: %X\n", stats[3])
-		fmt.Printf("group: %X\n", stats[4])
-		fmt.Printf("size: %X\n", stats[5])
+		stat.Flags = stats[1]
+		stat.Mode = stats[2]
+		stat.Owner = stats[3]
+		stat.Group = stats[4]
+		stat.Size = stats[5]
 	}
 	c.FSA_CloseFile(fsaHandle, fileHandle)
+	return stat
 }
 
 func (c *wupclient) askYesNo() bool {
@@ -1169,18 +1204,6 @@ func (c *wupclient) Up(localFilename, filename string) {
 	c.FSA_CloseFile(fsaHandle, fileHandle)
 }
 
-func (c *wupclient) FSA_Rename(handle uint32, oldPath string, newPath string) uint32 {
-	inbuffer := make([]byte, 0x520)
-	copyString(inbuffer, oldPath, 0x4)
-	copyString(inbuffer, newPath, 0x284)
-	ret, _, err := c.Ioctl(handle, 0x09, inbuffer, 0x293)
-	if err != nil {
-		fmt.Printf("FSA_Rename error: %X\n", ret)
-		return 1
-	}
-	return ret
-}
-
 func (c *wupclient) Mv(srcPath string, dstPath string) {
 	fsaHandle := c.GetFSAHandle()
 	if srcPath[0] != '/' {
@@ -1202,35 +1225,12 @@ func (c *wupclient) Mv(srcPath string, dstPath string) {
 	}
 }
 
-func (c *wupclient) FSA_MakeQuota(handle uint32, path string, mode uint32, size uint64) uint32 {
-	inbuffer := make([]byte, 0x520)
-	copyString(inbuffer, path, 0x4)
-	copyWord(inbuffer, mode, 0x284)
-	copyU64(inbuffer, size, 0x288)
-	ret, _, err := c.Ioctl(handle, 0x1D, inbuffer, 0x293)
-	if err != nil {
-		fmt.Printf("FSA_MakeQuota error: %X\n", ret)
-		return 1
-	}
-	return ret
-}
-
-func (c *wupclient) FSA_RemoveQuota(handle uint32, path string) uint32 {
-	inbuffer := make([]byte, 0x520)
-	copyString(inbuffer, path, 0x4)
-	ret, _, err := c.Ioctl(handle, 0x72, inbuffer, 0x293)
-	if err != nil {
-		fmt.Printf("FSA_RemoveQuota error: %X\n", ret)
-		return 1
-	}
-	return ret
-}
-
 func (c *wupclient) MkQuota(path string, mode uint32, size uint64) uint32 {
+	fsaHandle := c.GetFSAHandle()
 	if path[0] != '/' {
 		path = c.cwd + "/" + path
 	}
-	ret := c.FSA_MakeQuota(c.fsaHandle.(uint32), path, mode, size)
+	ret := c.FSA_MakeQuota(fsaHandle, path, mode, size)
 	if ret == 0 {
 		return 0
 	} else {
@@ -1240,10 +1240,11 @@ func (c *wupclient) MkQuota(path string, mode uint32, size uint64) uint32 {
 }
 
 func (c *wupclient) RmQuota(path string) uint32 {
+	fsaHandle := c.GetFSAHandle()
 	if path[0] != '/' {
 		path = c.cwd + "/" + path
 	}
-	ret := c.FSA_RemoveQuota(c.fsaHandle.(uint32), path)
+	ret := c.FSA_RemoveQuota(fsaHandle, path)
 	if ret == 0 {
 		return 0
 	} else {

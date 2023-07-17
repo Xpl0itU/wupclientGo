@@ -1,6 +1,10 @@
 package main
 
-import wupclientgo "github.com/Xpl0itU/wupclientGo"
+import (
+	"fmt"
+
+	wupclientgo "github.com/Xpl0itU/wupclientGo"
+)
 
 func main() {
 	client, err := wupclientgo.NewWUPClient("192.168.2.158", 1337)
@@ -10,5 +14,5 @@ func main() {
 	}
 	defer client.CloseConnection()
 
-	client.Ls("/vol/storage_mlc01", false)
+	fmt.Println(client.Ls("/vol/storage_mlc01", true))
 }
