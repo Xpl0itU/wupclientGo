@@ -1000,15 +1000,12 @@ func (c *wupclient) Fw(filename string, offset uint32, buffer []byte) {
 			break
 		}
 		fmt.Printf("%X\r", k)
-		ret, err := c.FSA_WriteFile(fsaHandle, fileHandle, buffer[k:(k+curSize)])
+		_, err := c.FSA_WriteFile(fsaHandle, fileHandle, buffer[k:(k+curSize)])
 		if err != nil {
 			fmt.Printf("fw error: could not write file\n")
 			return
 		}
 		k += curSize
-		if ret < 0 {
-			break
-		}
 	}
 	c.FSA_CloseFile(fsaHandle, fileHandle)
 }
@@ -1168,4 +1165,91 @@ func (c *wupclient) Up(localFilename, filename string) {
 		}
 	}
 	c.FSA_CloseFile(fsaHandle, fileHandle)
+}
+
+func (c *wupclient) FSA_Rename(handle uint32, oldPath string, newPath string) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, oldPath, 0x4)
+	copyString(inbuffer, newPath, 0x284)
+	ret, _, err := c.Ioctl(handle, 0x09, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_Rename error: %X\n", ret)
+		return 1
+	}
+	return ret
+}
+
+func (c *wupclient) Mv(srcPath string, dstPath string) {
+	fsaHandle := c.GetFSAHandle()
+	if srcPath[0] != '/' {
+		srcPath = c.cwd + "/" + srcPath
+	}
+	if dstPath[0] != '/' {
+		dstPath = c.cwd + "/" + dstPath
+	}
+	fmt.Println("WARNING: MOVING A FILE OR FOLDER CAN BRICK YOUR CONSOLE, ARE YOU SURE (Y/N)?")
+	if c.askyesno() {
+		ret := c.FSA_Rename(fsaHandle, srcPath, dstPath)
+		if ret == 0 {
+			fmt.Printf("moved %s to %s\n", srcPath, dstPath)
+		} else {
+			fmt.Printf("moving %s to %s failed: %08X\n", srcPath, dstPath, ret)
+		}
+	} else {
+		fmt.Println("mv aborted")
+	}
+}
+
+func copyU64(buffer []byte, w uint64, offset int) {
+	binary.BigEndian.PutUint64(buffer[offset:(offset+8)], w)
+}
+
+func (c *wupclient) FSA_MakeQuota(handle uint32, path string, mode uint32, size uint64) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, path, 0x4)
+	copyWord(inbuffer, mode, 0x284)
+	copyU64(inbuffer, size, 0x288)
+	ret, _, err := c.Ioctl(handle, 0x1D, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_MakeQuota error: %X\n", ret)
+		return 1
+	}
+	return ret
+}
+
+func (c *wupclient) FSA_RemoveQuota(handle uint32, path string) uint32 {
+	inbuffer := make([]byte, 0x520)
+	copyString(inbuffer, path, 0x4)
+	ret, _, err := c.Ioctl(handle, 0x72, inbuffer, 0x293)
+	if err != nil {
+		fmt.Printf("FSA_RemoveQuota error: %X\n", ret)
+		return 1
+	}
+	return ret
+}
+
+func (c *wupclient) MkQuota(path string, mode uint32, size uint64) uint32 {
+	if path[0] != '/' {
+		path = c.cwd + "/" + path
+	}
+	ret := c.FSA_MakeQuota(c.fsaHandle.(uint32), path, mode, size)
+	if ret == 0 {
+		return 0
+	} else {
+		fmt.Printf("mkquota error (%s, %08X)\n", path, ret)
+		return ret
+	}
+}
+
+func (c *wupclient) RmQuota(path string) uint32 {
+	if path[0] != '/' {
+		path = c.cwd + "/" + path
+	}
+	ret := c.FSA_RemoveQuota(c.fsaHandle.(uint32), path)
+	if ret == 0 {
+		return 0
+	} else {
+		fmt.Printf("rmquota error (%s, %08X)\n", path, ret)
+		return ret
+	}
 }
